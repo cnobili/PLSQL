@@ -1,0 +1,107 @@
+create or replace package jmh_crypto
+authid definer
+as
+--
+-- ---------------------------------------------------------------------------
+--
+-- package:  jmh_crypto
+--
+-- purpose:  Encryption and Decryption module.
+--
+-- ---------------------------------------------------------------------------
+--
+-- rev log
+--
+-- date:  26-MAR-2014
+-- author:  Craig Nobili
+-- desc: original
+--
+-- ---------------------------------------------------------------------------
+
+function encrypt (p_plain_text     in varchar2) return raw      deterministic;
+function decrypt (p_encrypted_text in raw)      return varchar2 deterministic;
+   
+end jmh_crypto;
+/
+show errors
+
+--
+-- Package Body
+--
+create or replace package body jmh_crypto
+as
+
+--  From the documentation on DBMS_CRYPTO
+--
+--  ENCRYPT_AES128 - Advanced Encryption Standard. Block cipher. Uses 128-bit key size.
+--  CHAIN_CBC      - Cipher Block Chaining. Plaintext is XORed with the previous ciphertext block before it is encrypted.
+--  PAD_PKCS5      - Provides padding which complies with the PKCS #5: Password-Based Cryptography Standard
+--
+
+encryption_type pls_integer := DBMS_CRYPTO.ENCRYPT_AES256 + DBMS_CRYPTO.CHAIN_CBC + DBMS_CRYPTO.PAD_PKCS5;
+
+-- 
+-- Wrap package to hide this key from users with read access to this package via the data dictionary.
+--
+-- > wrap iname=jmh_crypto.pkg oname=jmh_crypto.pkg
+--
+encryption_key_len pls_integer := 256/8; -- 32 byte key
+encryption_key     raw(32)     := UTL_RAW.cast_to_raw(rpad('MySecretEncryptionKey', encryption_key_len, 'x'));
+
+-- ---------------------------------------------------------------------------
+--
+-- function:  encrypt
+--
+-- purpose: Encrypts a plain text string.  Returns encrypted string as raw.
+--
+-- ---------------------------------------------------------------------------
+--  
+function encrypt (p_plain_text in varchar2) return raw deterministic
+is
+  encrypted_raw RAW(2000);
+begin
+
+  encrypted_raw := DBMS_CRYPTO.ENCRYPT
+  (
+    src => UTL_RAW.CAST_TO_RAW(p_plain_text)
+  , typ => encryption_type
+  , key => encryption_key
+  );
+  
+  return encrypted_raw;
+    
+end encrypt;
+
+-- ---------------------------------------------------------------------------
+--
+-- function:  decrypt
+--
+-- purpose: Decrypts an encrypted string (raw).  Returns decrypted string as varchar2.
+--
+-- ---------------------------------------------------------------------------
+--  
+function decrypt (p_encrypted_text in raw) return varchar2 deterministic
+is
+  decrypted_raw RAW(2000);
+begin
+
+  decrypted_raw := DBMS_CRYPTO.DECRYPT
+  (
+    src => p_encrypted_text
+  , typ => encryption_type
+  , key => encryption_key
+  );
+  
+  return (utl_raw.cast_to_varchar2(decrypted_raw));
+    
+end decrypt;
+
+end jmh_crypto;
+/
+show errors
+
+--
+-- Grant Execute to Public and Create Public Synonym for Package
+--
+grant execute on jmh_crypto to public;
+create or replace public synonym jmh_crypto for jmh_crypto;
